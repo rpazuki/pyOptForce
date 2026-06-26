@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyoptforce"
+version = "0.0.1"
+description = "A clean-room, extensible Python implementation of the OptForce strain-design procedure"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Roozbeh Pazuki" }]
+keywords = ["metabolic-modeling", "optforce", "strain-design", "cobra", "bilevel", "milp"]
+
+dependencies = [
+    "cobra>=0.29",
+    "optlang>=1.8",
+    "numpy>=1.26",
+    "pandas>=2.1",
+]
+
+[project.optional-dependencies]
+# Pick at least one MILP backend. Gurobi/CPLEX need academic licences.
+gurobi = ["gurobipy>=11.0"]
+scip   = ["pyscipopt>=5.0"]      # open-source MILP fallback
+dev    = ["pytest>=8.0", "pytest-cov", "ruff", "mypy"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_ignores = true
+ignore_missing_imports = true
