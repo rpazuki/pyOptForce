@@ -32,6 +32,7 @@ from __future__ import annotations
 import itertools
 
 import cobra
+from optlang.symbolics import Zero
 
 from pyoptforce.results import FluxRanges, MustSets
 
@@ -53,8 +54,13 @@ def _wt_feasible_with(model: cobra.Model, bounds: dict[str, tuple[str, float]]) 
     """Is ``model`` feasible when extra single-sided bounds are imposed?
 
     ``bounds`` maps reaction id -> (``">="`` | ``"<="``, value). Restores bounds on exit.
+
+    A **constant** objective is used so the answer is a pure feasibility test: it never
+    depends on the model's objective and an unbounded objective cannot masquerade as
+    infeasibility (``slim_optimize`` would return ``None`` on an unbounded maximise).
     """
     with model:
+        model.objective = model.problem.Objective(Zero, direction="max")
         for rid, (sense, val) in bounds.items():
             rxn = model.reactions.get_by_id(rid)
             if sense == ">=":

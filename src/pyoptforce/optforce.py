@@ -49,16 +49,33 @@ class OptForce:
         wt_growth_fraction: float = 1.0,
     ) -> None:
         self.model = model_mod.prepare_model(model, copy=True)
+        # Validate ids up front against THIS organism's SBML (clear error, not a deep
+        # KeyError later) and forbid the degenerate target==biomass case.
+        model_mod.require_reactions(self.model, [target_reaction, biomass_reaction])
+        if target_reaction == biomass_reaction:
+            raise ValueError(
+                "target_reaction and biomass_reaction must differ "
+                f"(both {target_reaction!r})."
+            )
+
         self.target_reaction = target_reaction
         self.biomass_reaction = biomass_reaction
         self.target_fraction = target_fraction
         self.solver = solver
+        if not 0.0 <= min_biomass_fraction <= 1.0:
+            raise ValueError("min_biomass_fraction must be in [0, 1].")
+        if not 0.0 <= wt_growth_fraction <= 1.0:
+            raise ValueError("wt_growth_fraction must be in [0, 1].")
         self.min_biomass_fraction = min_biomass_fraction
         self.wt_growth_fraction = wt_growth_fraction
 
         # point cobra at an installed backend
         from pyoptforce import solvers
         self.model.solver = solvers.cobra_solver_name(solver)
+
+        # Anchor the cellular objective to the biomass reaction explicitly and once, so
+        # no stage ever inherits whatever objective the SBML happened to define.
+        model_mod.set_linear_objective(self.model, self.biomass_reaction, "max")
 
         # populated as the pipeline runs — inspect freely
         self.target_model: cobra.Model | None = None
@@ -71,9 +88,27 @@ class OptForce:
     # ------------------------------------------------------------------ stages 1&2
     def compute_flux_ranges(self) -> FluxRanges:
         """Stages 1 & 2: WT FVA and target-constrained FVA."""
-        vmax = model_mod.theoretical_max(self.model, self.target_reaction)
-        self.target_threshold = self.target_fraction * vmax
+        # Re-assert the biomass objective defensively (the caller may have touched
+        # self.model since construction): the WT basal state, stage-1 FVA
+        # fraction_of_optimum, and max_growth must all be measured against biomass —
+        # never whatever objective the SBML happened to define.
+        model_mod.set_linear_objective(self.model, self.biomass_reaction, "max")
+
         self.max_growth = model_mod.theoretical_max(self.model, self.biomass_reaction)
+        if self.max_growth <= _TOL:
+            raise ValueError(
+                f"Wild-type cannot grow (max biomass={self.max_growth:.3g}); OptForce "
+                "assumes a viable growing strain. Check the biomass reaction and uptake "
+                "bounds."
+            )
+
+        vmax = model_mod.theoretical_max(self.model, self.target_reaction)
+        if vmax <= _TOL:
+            raise ValueError(
+                f"Target {self.target_reaction!r} cannot be produced "
+                f"(max={vmax:.3g}). Check the reaction id, orientation, and uptake."
+            )
+        self.target_threshold = self.target_fraction * vmax
 
         self.target_model = model_mod.set_target_yield(
             self.model,
@@ -158,6 +193,10 @@ class OptForce:
         }
         growth_floor = (self.biomass_reaction,
                         self.min_biomass_fraction * self.max_growth)
+        # WT FVA ranges = finite surrogates for any ±inf model bounds in the dual.
+        finite_bounds = {
+            r: (fr.min_w[r], fr.max_w[r]) for r in fr.min_w
+        }
         sets = bilevel.solve_force_milp(
             self.model,
             target_reaction=self.target_reaction,
@@ -166,6 +205,7 @@ class OptForce:
             growth_floor=growth_floor,
             k=k,
             threshold=self.target_threshold,
+            finite_bounds=finite_bounds,
             n_solutions=n_solutions,
             tol=_TOL,
         )

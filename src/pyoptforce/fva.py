@@ -29,10 +29,11 @@ def wild_type_ranges(
 ) -> dict[str, tuple[float, float]]:
     """Stage 1: FVA on the wild-type model -> minFluxesW, maxFluxesW.
 
-    ``fraction_of_optimum=0.0`` explores the full WT feasible space (no growth is
-    forced), which is the conservative choice for the MUST comparison: any flux the
-    WT *could* carry counts against declaring a forced change. Returns
-    ``{rxn_id: (min, max)}``.
+    ``fraction_of_optimum`` constrains the model's **current objective**; the OptForce
+    driver anchors that to the biomass reaction before calling, so the WT basal state is
+    measured against growth (not whatever objective the SBML shipped). Standalone callers
+    must set the intended objective themselves. ``fraction_of_optimum=0.0`` explores the
+    full feasible space. Returns ``{rxn_id: (min, max)}``.
     """
     return _fva_dict(model, fraction_of_optimum=fraction_of_optimum)
 

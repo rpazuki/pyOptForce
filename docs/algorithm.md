@@ -41,6 +41,15 @@ maximise and minimise that reaction's flux over the feasible steady-state set. T
 difference between the stages is *which feasible set* — i.e. which constraints and which
 "fraction of optimum" — they explore.
 
+> **Objective is never inherited from the SBML.** `OptForce.__init__` validates that the
+> `target_reaction`/`biomass_reaction` ids exist and explicitly sets the model objective
+> to biomass, so the `fraction_of_optimum` constraint below always pins *growth* — never
+> whatever objective the input file happened to define (which would make stage 1 correct
+> only by coincidence). Guards reject missing or equal ids, a target that cannot be
+> produced (`vmax ≤ 0`), and a model that cannot grow (`max_growth ≤ 0`). Feasibility is
+> probed with a constant objective, so even a model shipping an unbounded default
+> objective is handled.
+
 **Stage 1 — wild-type basal state (`fva.wild_type_ranges`).** The WT network at (a
 fraction of) maximum growth. The `OptForce` driver runs this with
 `fraction_of_optimum = wt_growth_fraction` (driver default `1.0`, i.e. growth pinned at

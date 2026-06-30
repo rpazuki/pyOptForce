@@ -38,11 +38,34 @@ See docs/algorithm.md for the full derivation.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
 
 from pyoptforce import solvers
+
+
+def _finite_or_raise(
+    finite_bounds: dict[str, tuple[float, float]] | None,
+    rid: str,
+    idx: int,
+    which: str,
+) -> float:
+    """Return a finite surrogate for an infinite model bound, or raise.
+
+    ``finite_bounds`` are the WT FVA ranges ``{rid: (min, max)}``. ``idx`` selects
+    min (0) or max (1).
+    """
+    if finite_bounds is not None and rid in finite_bounds:
+        val = finite_bounds[rid][idx]
+        if math.isfinite(val):
+            return float(val)
+    raise ValueError(
+        f"Reaction {rid!r} has a non-finite {which} bound and no finite surrogate from "
+        "FVA; cannot build the strong-duality MILP. Run compute_flux_ranges first or "
+        "set finite reaction bounds."
+    )
 
 
 def big_m_from_ranges(min_flux: float, max_flux: float, *, buffer: float = 1.0) -> float:
@@ -204,6 +227,7 @@ def solve_force_milp(
     growth_floor: tuple[str, float] | None,
     k: int,
     threshold: float,
+    finite_bounds: dict[str, tuple[float, float]] | None = None,
     n_solutions: int = 1,
     tol: float = 1e-6,
 ) -> list[dict]:
@@ -244,6 +268,11 @@ def solve_force_milp(
     A solution is a valid FORCE set iff its objective ``>= threshold``. Alternative
     optima are enumerated with integer cuts. Returns a list of
     ``{"reactions", "type", "objective"}`` dicts (same shape as the LP path).
+
+    Infinite model bounds (some SBML use ``±inf``) would put an infinite coefficient in
+    the dual objective and break strong duality. ``finite_bounds`` (the WT FVA ranges,
+    which are the actual reachable flux extremes — interventions only tighten, never
+    widen) supplies a valid finite surrogate; an unbacked ``±inf`` bound raises.
     """
     gp = solvers.require_gurobi()
     GRB = gp.GRB
@@ -252,9 +281,17 @@ def solve_force_milp(
     rids = [r.id for r in reactions]
     c = {rid: (1.0 if rid == target_reaction else 0.0) for rid in rids}
 
-    # base WT bounds, with the viability floor folded into the biomass lower bound
-    lb = {r.id: float(r.lower_bound) for r in reactions}
-    ub = {r.id: float(r.upper_bound) for r in reactions}
+    # Base WT bounds, made finite via the FVA ranges where the model uses ±inf, with the
+    # viability floor folded into the biomass lower bound.
+    lb: dict[str, float] = {}
+    ub: dict[str, float] = {}
+    for r in reactions:
+        lo, hi = float(r.lower_bound), float(r.upper_bound)
+        if not math.isfinite(lo):
+            lo = _finite_or_raise(finite_bounds, r.id, 0, "lower")
+        if not math.isfinite(hi):
+            hi = _finite_or_raise(finite_bounds, r.id, 1, "upper")
+        lb[r.id], ub[r.id] = lo, hi
     if growth_floor is not None:
         bio_id, floor = growth_floor
         lb[bio_id] = max(lb[bio_id], float(floor))
