@@ -87,7 +87,7 @@ the objective handed to FVA:
 | | Stage 1 (WT, `wild_type_ranges`) | Stage 2 (target/"M", `target_ranges`) |
 |---|---|---|
 | Stoichiometry | `S v = 0` | `S v = 0` |
-| Reaction bounds | native WT `lb`/`ub` | WT bounds **plus** `v[target] ≥ threshold` |
+| Reaction bounds | native WT `lb`/`ub` | WT bounds **plus** `v[target] ≥ threshold = (target_fraction · vmax)` |
 | Objective used as a floor | biomass, held at `fraction_of_optimum = wt_growth_fraction` (driver default **1.0**) | biomass, but FVA run at `fraction_of_optimum = 0.0` |
 | Meaning | "what a maximally-growing wild type can do" | "everything consistent with the overproduction demand" |
 
