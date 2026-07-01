@@ -225,6 +225,19 @@ with the three sign patterns
 - `MUSTUL`: `v_i ≥ min_m_i` ∧ `v_j ≤ max_m_j`  (one up, one down; the symmetric case is
   stored as the swapped pair).
 
+> **Which bounds go in — and why they are the target ones.** The thresholds are the
+> *target* ranges `min_m`/`max_m`, deliberately, never the wild-type `min_w`/`max_w`. The
+> reasoning: it is the **target strain's** flux that *defines* the requirement (where the
+> overproducing cell needs each reaction to sit), and we impose that requirement on the
+> **wild-type** model to ask whether the WT can meet it. So a `MUSTUU` test literally reads
+> "can the WT push `v_i` up to where the target needs it *and* `v_j` up to where the target
+> needs it, at the same time?" Substituting `min_w`/`max_w` would make the test vacuous:
+> the WT satisfies its own range by definition (`v_i ≥ min_w_i` holds for every WT steady
+> state), so the joint system could never be infeasible and no pair would ever be flagged.
+> This is also why first-order reactions are excluded — for them `v_i ≥ min_m_i` is already
+> infeasible in the WT alone (`min_m_i > max_w_i`), so they fail the "feasible alone" clause
+> below rather than showing up as a pair.
+
 The "each single bound feasible alone" clause is essential. It guarantees neither reaction
 is *individually* forced (those are already first order) — so the infeasibility is a
 property of the **pair**, an emergent coupling, not of either member.
