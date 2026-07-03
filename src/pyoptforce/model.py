@@ -33,14 +33,17 @@ def require_reactions(model: cobra.Model, reaction_ids: list[str]) -> None:
     cobra would otherwise raise a bare ``KeyError`` deep in a later stage; surface the
     problem up front with the offending ids.
     """
-    present = {r.id for r in model.reactions}
-    missing = [rid for rid in reaction_ids if rid not in present]
-    if missing:
-        raise KeyError(
-            f"Reaction id(s) not in model: {missing}. "
-            f"Check the ids against this organism's SBML (the model has "
-            f"{len(present)} reactions)."
-        )
+    # cobra DictList lookups are indexed by id; checking only requested ids avoids
+    # rebuilding a full-id set on every call.
+    for rid in dict.fromkeys(reaction_ids):
+        try:
+            model.reactions.get_by_id(rid)
+        except KeyError:
+            raise KeyError(
+                f"Reaction id not in model: {rid!r}. "
+                f"Check ids against this organism's SBML (the model has "
+                f"{len(model.reactions)} reactions)."
+            ) from None
 
 
 def set_linear_objective(
