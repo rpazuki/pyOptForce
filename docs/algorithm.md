@@ -199,9 +199,18 @@ the product. Two solution paths (`find_force_sets(method=...)`):
   constraints** (no big-M). Integer cuts enumerate alternative optima.
   Equation refs: Ranganathan et al. 2010, Eqs. 7–12.
 
-Both paths must agree on the toy network (`tests/test_gurobi.py`). Note that
-down-regulation **alone** often fails to *force* production (the cell can simply drop
-uptake), and both paths correctly reject such sets.
+Both paths must agree — cross-validated thoroughly in `tests/test_milp_vs_enumeration.py`
+(the toy network across k=0-3, ties, and infeasible-viability-floor edge cases, plus the
+real `e_coli_core` succinate case) and with a minimal smoke test in
+`tests/test_gurobi.py`. One subtlety the thorough suite is built around: `enumerate`
+returns *inclusion-minimal* sets only, while `milp`'s integer-cut enumeration also
+surfaces non-minimal supersets tied at the same objective (turning on an extra
+intervention that doesn't hurt the worst case is still optimal, just not minimal) — so
+raw list equality between the two only holds at k=1; for k>=2 the correct check filters
+MILP's output down to its own minimal members first, and separately verifies both paths'
+optimal objective against an independent brute-force scan of every candidate subset.
+Also note that down-regulation **alone** often fails to *force* production (the cell can
+simply drop uptake), and both paths correctly reject such sets.
 
 **Why the solutions are genuine steady states.** Every flux vector the LP/MILP considers
 satisfies `S v = 0` and the bounds, so it is a physically consistent steady-state
@@ -214,3 +223,7 @@ discussed in `in-depth.md §4`.
 ## Validation targets
 - Toy network with hand-computed MUST/FORCE sets (`tests/`, all passing).
 - E. coli succinate case study (`examples/ecoli_succinate.py`) vs published results.
+- MILP vs. enumerate cross-validation (`tests/test_milp_vs_enumeration.py`): both FORCE
+  paths checked against each other *and* against an independent brute-force scan of
+  every candidate subset, on both the toy network and `e_coli_core` succinate
+  overproduction, including k=0 and infeasible-viability-floor edge cases.

@@ -30,6 +30,7 @@ published bilevel search (:mod:`pyoptforce.bilevel`) for moderate candidate pool
 from __future__ import annotations
 
 import itertools
+import math
 
 import cobra
 from optlang.symbolics import Zero
@@ -57,7 +58,7 @@ def _wt_feasible_with(model: cobra.Model, bounds: dict[str, tuple[str, float]]) 
 
     A **constant** objective is used so the answer is a pure feasibility test: it never
     depends on the model's objective and an unbounded objective cannot masquerade as
-    infeasibility (``slim_optimize`` would return ``None`` on an unbounded maximise).
+    infeasibility (``slim_optimize`` would return ``nan`` on an unbounded maximise).
     """
     with model:
         model.objective = model.problem.Objective(Zero, direction="max")
@@ -67,8 +68,13 @@ def _wt_feasible_with(model: cobra.Model, bounds: dict[str, tuple[str, float]]) 
                 rxn.lower_bound = max(rxn.lower_bound, val)
             else:
                 rxn.upper_bound = min(rxn.upper_bound, val)
-        sol = model.slim_optimize(error_value=None)
-    return sol is not None
+        # NB: slim_optimize(error_value=None) does NOT return None on failure — per its
+        # own docstring, error_value=None means "raise instead". Use the default NaN
+        # sentinel and check for it, which is the pattern cobra actually supports. This
+        # matters here specifically: an infeasible joint bound is the very condition
+        # MUSTUU/LL/UL are testing for, so it must be reported as False, not raised.
+        sol = model.slim_optimize()
+    return not math.isnan(sol)
 
 
 def second_order(

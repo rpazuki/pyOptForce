@@ -21,6 +21,8 @@ file defined. This keeps the pipeline correct across arbitrary organisms' models
 
 from __future__ import annotations
 
+import math
+
 import cobra
 from optlang.symbolics import Zero
 
@@ -63,8 +65,11 @@ def is_feasible(model: cobra.Model) -> bool:
     """
     with model:
         model.objective = model.problem.Objective(Zero, direction="max")
-        value = model.slim_optimize(error_value=None)
-    return value is not None
+        # NB: slim_optimize(error_value=None) does NOT return None on failure — per its
+        # own docstring, error_value=None means "raise instead". Use the default NaN
+        # sentinel and check for it, which is the pattern cobra actually supports.
+        value = model.slim_optimize()
+    return not math.isnan(value)
 
 
 def prepare_model(model: cobra.Model, *, copy: bool = True) -> cobra.Model:
@@ -101,8 +106,8 @@ def theoretical_max(
     with model:
         model.objective = reaction_id
         model.objective_direction = direction
-        value = model.slim_optimize(error_value=None)
-        if value is None:
+        value = model.slim_optimize()
+        if math.isnan(value):
             status = model.solver.status
             raise ValueError(
                 f"Could not optimise {reaction_id!r} (status={status!r}); the flux is "

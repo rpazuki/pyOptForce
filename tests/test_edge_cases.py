@@ -93,3 +93,54 @@ def test_finite_or_raise_surrogate_and_error():
         bilevel._finite_or_raise(None, "r", 0, "lower")
     with pytest.raises(ValueError):
         bilevel._finite_or_raise({"r": (float("-inf"), 7.0)}, "r", 0, "lower")
+
+
+# ------------------------------------------------------------ slim_optimize(error_value=None) misuse
+# Regression tests: `slim_optimize(error_value=None)` does NOT return None on failure —
+# per cobra's own docstring, error_value=None means "raise instead". `is_feasible`,
+# `theoretical_max`, `_worst_case_target`, and `_wt_feasible_with` (must_sets.py) all
+# used to assume the opposite, so a genuinely infeasible/unbounded LP would crash with a
+# raw cobra exception instead of the clean, intended failure signal. Fixed by using the
+# default NaN sentinel and checking `math.isnan`. See must_sets.py's own regression test
+# (test_must_sets.py) for the `_wt_feasible_with` half of this bug.
+def test_is_feasible_returns_false_not_raise_on_infeasible_model():
+    # genuinely LP-infeasible (mass balance forces r_in == r_out, but their ranges
+    # [5,10] and [0,2] cannot overlap) -- not merely an unbounded default objective.
+    m = cobra.Model("infeasible")
+    a = cobra.Metabolite("A")
+    m.add_metabolites([a])
+    r_in = cobra.Reaction("in", lower_bound=5, upper_bound=10)
+    r_in.add_metabolites({a: 1})
+    r_out = cobra.Reaction("out", lower_bound=0, upper_bound=2)
+    r_out.add_metabolites({a: -1})
+    m.add_reactions([r_in, r_out])
+    m.objective = "in"
+
+    assert M.is_feasible(m) is False
+
+
+def test_theoretical_max_raises_clean_valueerror_not_raw_cobra_exception():
+    m = cobra.Model("unbounded")
+    a = cobra.Metabolite("A")
+    m.add_metabolites([a])
+    r_in = cobra.Reaction("in", lower_bound=0, upper_bound=float("inf"))
+    r_in.add_metabolites({a: 1})
+    r_out = cobra.Reaction("out", lower_bound=0, upper_bound=float("inf"))
+    r_out.add_metabolites({a: -1})
+    m.add_reactions([r_in, r_out])
+
+    with pytest.raises(ValueError, match="Could not optimise"):
+        M.theoretical_max(m, "in")
+
+
+def test_worst_case_target_handles_biomass_down_conflict_gracefully(toy_model):
+    # Regression test: at a high enough target_fraction, the biomass reaction's own
+    # M-derived max ("down" intervention value) falls below the viability floor already
+    # applied to its lower bound. Setting both on the SAME reaction used to raise a raw
+    # cobra ValueError (lb > ub) instead of being treated as "no engineered strain
+    # exists for this combination" (None).
+    of = OptForce(toy_model, target_reaction="EX_P", biomass_reaction="bio",
+                  target_fraction=0.99, solver="auto")
+    of.compute_flux_ranges()
+    assert of.flux_ranges.max_m["bio"] < of.min_biomass_fraction * of.max_growth
+    assert of._worst_case_target({"bio": "down"}) is None

@@ -27,6 +27,7 @@ minimal valid sets are returned (the analogue of integer-cut enumeration).
 from __future__ import annotations
 
 import itertools
+import math
 
 import cobra
 
@@ -163,22 +164,36 @@ class OptForce:
         """Inner adversary: min target flux on the engineered viable strain.
 
         Returns the worst-case target flux, or ``None`` if the engineered strain is
-        infeasible (cannot even grow at the viability floor).
+        infeasible (cannot even grow at the viability floor) — including when the
+        biomass reaction is itself a "down" candidate and its forced upper bound
+        directly conflicts with the viability floor already on its lower bound.
         """
         fr = self.flux_ranges
         min_growth = self.min_biomass_fraction * self.max_growth
         with self.model as m:
             m.reactions.get_by_id(self.biomass_reaction).lower_bound = min_growth
-            for rid, direction in interventions.items():
-                rxn = m.reactions.get_by_id(rid)
-                if direction == "up":
-                    rxn.lower_bound = max(rxn.lower_bound, fr.min_m[rid])
-                else:  # down
-                    rxn.upper_bound = min(rxn.upper_bound, fr.max_m[rid])
+            try:
+                for rid, direction in interventions.items():
+                    rxn = m.reactions.get_by_id(rid)
+                    if direction == "up":
+                        rxn.lower_bound = max(rxn.lower_bound, fr.min_m[rid])
+                    else:  # down
+                        rxn.upper_bound = min(rxn.upper_bound, fr.max_m[rid])
+            except ValueError:
+                # cobra validates lb <= ub on every bound assignment; a candidate whose
+                # forced bound directly conflicts with one already applied (e.g. a
+                # biomass "down" candidate vs. the viability floor) means no engineered
+                # strain exists for this combination at all.
+                return None
             m.objective = self.target_reaction
             m.objective_direction = "min"  # adversary minimises the target
-            val = m.slim_optimize(error_value=None)
-        return None if val is None else float(val)
+            # NB: slim_optimize(error_value=None) does NOT return None on failure — per
+            # its own docstring, error_value=None means "raise instead". Use the default
+            # NaN sentinel and check for it (the pattern cobra actually supports), so an
+            # infeasible engineered model (e.g. interventions conflicting with the
+            # viability floor) is reported as None, not an uncaught exception.
+            val = m.slim_optimize()
+        return None if math.isnan(val) else float(val)
 
     def _force_sets_milp(
         self, directions: dict[str, str], k: int, n_solutions: int
